@@ -1,8 +1,9 @@
+
+set +e
+
 HOME_DIR=/home/jaguar
-REL_PATH=$HOME_DIR/test_scripts
+REL_PATH=$HOME_DIR/Documents/toolcahins/scripts_for_building_gcc_toolchains
 PROJ_DIR=$REL_PATH/linux_toolchain_build
-
-
 
 
 
@@ -104,7 +105,7 @@ copy_sources()
 {
 	mkdir -p $SOURCES_DIR
 	echo "copy all sources"
-	cp -R $COMMON_DOWNLOADS_DIR/sources/* $SOURCES_DIR/
+	cp -R $COMMON_DOWNLOADS_DIR/* $SOURCES_DIR/
 	mkdir -p $GDB_SRC_DIR
 	cp -R $BINUTILS_SRC_DIR/* $GDB_SRC_DIR/
 }
@@ -133,8 +134,12 @@ prepare_build_dir()
 
 prepare_install_dir()
 {
-	sudo mkdir -p $TOOLCHAIN_INSTALL_DIR
-	sudo chown jaguar:jaguar $TOOLCHAIN_INSTALL_DIR
+	#sudo mkdir -p $TOOLCHAIN_INSTALL_DIR
+	#sudo chown jaguar:jaguar $TOOLCHAIN_INSTALL_DIR
+
+	mkdir -p $TOOLCHAIN_INSTALL_DIR
+	#chown jaguar:jaguar $TOOLCHAIN_INSTALL_DIR
+
 	export PATH=$TOOLCHAIN_INSTALL_DIR/bin:$PATH
 	echo $PATH
 }
@@ -290,10 +295,18 @@ cleanup_build_dir()
        rm -Rf $BUILD_DIR 
 }
 
+check_directories()
+{
+	echo $PROJ_DIR
+	echo $COMMON_DOWNLOADS_DIR
+	ls $COMMON_DOWNLOADS_DIR/
+	echo $SOURCES_DIR
+    exit
+}
 
 
 
-
+#check_directories
 #cleanup_toolchain
 #cleanup_build_dir
 #download_sources
@@ -301,17 +314,17 @@ cleanup_build_dir()
 
 #prepare_gcc_src
 
-#prepare_build_dir
-#prepare_install_dir
+prepare_build_dir
+prepare_install_dir
 set_environment
 
-#build_binutils
-#install_linux_headers
-#build_gcc_stage1
-#build_glibc_headers
-#build_gcc_stage2
-#build_glibc
-#build_gcc_final
+build_binutils
+install_linux_headers
+build_gcc_stage1
+build_glibc_headers
+build_gcc_stage2
+build_glibc
+build_gcc_final
 build_gdb
 
 
