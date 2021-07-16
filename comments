@@ -1,0 +1,280 @@
+gcc distribution
+hosted and freestanding implementations. 
+
+
+
+
+Top Level Source Directory
+gcc Subdirectory
+
+Configure Terms and History:
+---------------------------
+--build  =the machine you are building on (build): where gcc built
+--host   =the machine that you are building for (host): where gcc runs
+--target =the machine that GCC will produce code for (target): for which m/c gcc produces code
+
+
+Specifying the host without specifying the build should be avoided,
+as configure will assume that the host you specify is also the build, which may not be true
+
+If build and host are the same but target is different, this is called a cross.
+cross build of gcc: --build = --host 
+
+If build and host are the same, the GCC you are building will also be used to build the target libraries.
+
+In the case of target libraries, 
+--host= target : as this is the machine you are building for
+and --target doesn’t apply (because you’re not building a compiler, you’re building libraries)
+
+configure/make process will adjust these variables as needed
+
+
+
+Headers Installed by GCC
+--------------------------
+
+In general, GCC expects the system C library to provide most of the headers to be used with it.
+
+However, GCC will fix those headers if necessary to make them work with GCC.
+
+After fixing it will install  headers required by freestanding implementations in libsubdir/include.
+
+
+
+Several of the headers GCC installs are in the ginclude directory. These headers, iso646.h, stdarg.h, stdbool.h, and stddef.h, are installed in libsubdir/include,
+unless the target Makefile fragment (see Target Fragment) overrides this by setting USER_H. 
+
+config.gcc may set extra_headers; this specifies additional headers under config to be installed on some systems in libsubdir/include.
+
+
+compiler option -ffreestanding  and linker option -nostdlib 
+will have following implications:
+
+freestanding headers:
+--------------------------
+In freestanding mode, the only available standard header files are:
+ <float.h>, <iso646.h>, <limits.h>, <stdarg.h>, <stdbool.h>, <stddef.h>, and <stdint.h> (C99 standard 4.6). 
+ These headers define the types appropriate for the machine being used, as well as useful constants such as the minimum and maximum values for different types.
+
+The other standard header files (<stdio.h>, <string.h> and so on) are not to be used.
+
+when -ffreestanding is used, gcc does not assume a standard library environment.
+and will not make such optimizations like replacing printf with putc.
+with --freestanding you can provide your own putc implementation.
+
+
+default libs and startfiles:
+-------------------------------
+-nostdlib implies the individual options -nodefaultlibs and -nostartfiles.
+
+libgcc.a is a standard library (linked by default, excluded by -nodefaultlibs) 
+libgcc.a (generally for hosted environments) provides internal subroutines to overcome shortcomings of particular machines. 
+
+libgcc does not supply memcpy and related functions. 
+GCC requires the freestanding environment provide memcpy, memmove, memset and memcmp.
+
+
+
+
+arm-foo-none-eabi -- baremetal toolchain for arm
+newlib is used for baremetal
+
+
+
+/opt/cross/aarch64-linux/
+system root of an imaginary AArch64 Linux target system.
+AArch64 Linux compiler could use all the headers and libraries placed here.
+
+
+
+
+best-guide:
+https://preshing.com/20141119/how-to-build-a-gcc-cross-compiler/
+
+Create symbolic links from the GCC directory to some of the other directories. These five packages are dependencies of GCC, and when the symbolic links are present, GCC’s build script will build them automatically.
+
+$ cd gcc-4.9.2
+$ ln -s ../mpfr-3.1.2 mpfr
+$ ln -s ../gmp-6.0.0 gmp
+$ ln -s ../mpc-1.0.2 mpc
+$ ln -s ../isl-0.12.2 isl
+$ ln -s ../cloog-0.18.1 cloog
+$ cd ..
+
+Choose an installation directory, and make sure you have write permission to it. In the steps that follow, I’ll install the new toolchain to /opt/cross.
+
+$ sudo mkdir -p /opt/cross
+$ sudo chown jeff /opt/cross
+
+Throughout the entire build process, make sure the installation’s bin subdirectory is in your PATH environment variable. You can remove this directory from your PATH later, but most of the build steps expect to find aarch64-linux-gcc and other host tools via the PATH by default.
+
+$ export PATH=/opt/cross/bin:$PATH
+
+Pay particular attention to the stuff that gets installed under /opt/cross/aarch64-linux/. This directory is considered the system root of an imaginary AArch64 Linux target system. A self-hosted AArch64 Linux compiler could, in theory, use all the headers and libraries placed here. Obviously, none of the programs built for the host system, such as the cross-compiler itself, will be installed to this directory.
+
+
+1. Binutils
+
+This step builds and installs the cross-assembler, cross-linker, and other tools.
+
+$ mkdir build-binutils
+$ cd build-binutils
+$ ../binutils-2.24/configure --prefix=/opt/cross --target=aarch64-linux --disable-multilib
+$ make -j4
+$ make install
+$ cd ..
+
+    We’ve specified aarch64-linux as the target system type. Binutils’s configure script will recognize that this target is different from the machine we’re building on, and configure a cross-assembler and cross-linker as a result. The tools will be installed to /opt/cross/bin, their names prefixed by aarch64-linux-.
+    --disable-multilib means that we only want our Binutils installation to work with programs and libraries using the AArch64 instruction set, and not any related instruction sets such as AArch32.
+
+
+2. Linux Kernel Headers
+
+This step installs the Linux kernel header files to /opt/cross/aarch64-linux/include, which will ultimately allow programs built using our new toolchain to make system calls to the AArch64 kernel in the target environment.
+
+$ cd linux-3.17.2
+$ make ARCH=arm64 INSTALL_HDR_PATH=/opt/cross/aarch64-linux headers_install
+$ cd ..
+
+    We could even have done this before installing Binutils.
+    The Linux kernel header files won’t actually be used until step 6, when we build the standard C library, although the configure script in step 4 expects them to be already installed.
+    Because the Linux kernel is a different open-source project from the others, it has a different way of identifying the target CPU architecture: ARCH=arm64
+
+All of the remaining steps involve building GCC and Glibc. The trick is that there are parts of GCC which depend on parts of Glibc already being built, and vice versa. We can’t build either package in a single step; we need to go back and forth between the two packages and build their components in a way that satisfies their dependencies.
+
+
+
+3. C/C++ Compilers
+
+This step will build GCC’s C and C++ cross-compilers only, and install them to /opt/cross/bin. It won’t invoke those compilers to build any libraries just yet.
+
+$ mkdir -p build-gcc
+$ cd build-gcc
+$ ../gcc-4.9.2/configure --prefix=/opt/cross --target=aarch64-linux --enable-languages=c,c++ --disable-multilib
+$ make -j4 all-gcc
+$ make install-gcc
+$ cd ..
+
+    Because we’ve specified --target=aarch64-linux, the build script looks for the Binutils cross-tools we built in step 1 with names prefixed by aarch64-linux-. Likewise, the C/C++ compiler names will be prefixed by aarch64-linux-.
+    --enable-languages=c,c++ prevents other compilers in the GCC suite, such as Fortran, Go or Java, from being built.
+
+
+
+4. Standard C Library Headers and Startup Files
+
+In this step, we install Glibc’s standard C library headers to /opt/cross/aarch64-linux/include. We also use the C compiler built in step 3 to compile the library’s startup files and install them to /opt/cross/aarch64-linux/lib. Finally, we create a couple of dummy files, libc.so and stubs.h, which are expected in step 5, but which will be replaced in step 6.
+
+$ mkdir -p build-glibc
+$ cd build-glibc
+$ ../glibc-2.20/configure --prefix=/opt/cross/aarch64-linux --build=$MACHTYPE --host=aarch64-linux --target=aarch64-linux --with-headers=/opt/cross/aarch64-linux/include --disable-multilib libc_cv_forced_unwind=yes
+$ make install-bootstrap-headers=yes install-headers
+$ make -j4 csu/subdir_lib
+$ install csu/crt1.o csu/crti.o csu/crtn.o /opt/cross/aarch64-linux/lib
+$ aarch64-linux-gcc -nostdlib -nostartfiles -shared -x c /dev/null -o /opt/cross/aarch64-linux/lib/libc.so
+$ touch /opt/cross/aarch64-linux/include/gnu/stubs.h
+$ cd ..
+
+    --prefix=/opt/cross/aarch64-linux tells Glibc’s configure script where it should install its headers and libraries. Note that it’s different from the usual --prefix.
+    Despite some contradictory information out there, Glibc’s configure script currently requires us to specify all three --build, --host and --target system types.
+    $MACHTYPE is a predefined environment variable which describes the machine running the build script. --build=$MACHTYPE is needed because in step 6, the build script will compile some additional tools which run as part of the build process itself.
+    --host has a different meaning here than we’ve been using so far. In Glibc’s configure, both the --host and --target options are meant to describe the system on which Glibc’s libraries will ultimately run.
+    We install the C library’s startup files, crt1.o, crti.o and crtn.o, to the installation directory manually. There’s doesn’t seem to a make rule that does this without having other side effects.
+
+
+
+5. Compiler Support Library
+
+This step uses the cross-compilers built in step 3 to build the compiler support library. The compiler support library contains some C++ exception handling boilerplate code, among other things. This library depends on the startup files installed in step 4. The library itself is needed in step 6. Unlike some other guides, we don’t need to re-run GCC’s configure. We’re just building additional targets in the same configuration.
+
+$ cd build-gcc
+$ make -j4 all-target-libgcc
+$ make install-target-libgcc
+$ cd ..
+
+    Two static libraries, libgcc.a and libgcc_eh.a, are installed to /opt/cross/lib/gcc/aarch64-linux/4.9.2/.
+    A shared library, libgcc_s.so, is installed to /opt/cross/aarch64-linux/lib64.
+
+6. Standard C Library
+
+In this step, we finish off the Glibc package, which builds the standard C library and installs its files to /opt/cross/aarch64-linux/lib/. The static library is named libc.a and the shared library is libc.so.
+
+$ cd build-glibc
+$ make -j4
+$ make install
+$ cd ..
+
+7. Standard C++ Library
+
+Finally, we finish off the GCC package, which builds the standard C++ library and installs it to /opt/cross/aarch64-linux/lib64/. It depends on the C library built in step 6. The resulting static library is named libstdc++.a and the shared library is libstdc++.so.
+
+$ cd build-gcc
+$ make -j4
+$ make install
+$ cd ..
+
+Dealing with Build Errors
+
+If you encounter any errors during the build process, there are three possibilities:
+
+    You’re missing a required package or tool on the build system.
+    You’re attempting to perform the build steps in an incorrect order.
+    You’ve done everything right, but something is just broken in the configuration you’re attempting to build.
+
+You’ll have to examine the build logs to determine which case applies. GCC supports a lot of configurations, and some of them may not build right away. The less popular a configuration is, the greater the chance of it being broken. GCC, being an open source project, depends on contributions from its users to keep each configuration working.
+
+
+
+building a Newlib-based cross-compiler
+----------------------------------
+build_cross_gcc also supports Newlib configurations. When you build a Newlib-based cross-compiler, steps 4, 5 and 6 above can be combined into a single step. (Indeed, that’s what many existing guides do.) For Newlib support, edit the script options as follows:
+
+TARGET=aarch64-elf
+USE_NEWLIB=1
+CONFIGURATION_OPTIONS="--disable-multilib --disable-threads"
+
+
+compiling glibc
+---------------
+glibc is not a compilation tool, so --target= should not be used when 
+configuring it.
+
+> libc_cv_forced_unwind=yes libc_cv_c_cleanup=yes
+
+These settings are obsolete for all glibc versions from after March 2012.
+
+
+ franz.flasch 2019-02-06 19:36:03 UTC
+
+Still the same problem: Here is the complete steps I use in my cross toolchain build:
+
+1. Binutils:
+/working_dir/Desktop/work/private/gcc_toolchain_builds/sources/binutils-2.32/configure --target=arm-linux-gnueabi --prefix=/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain --disable-nls --disable-werror
+make all
+make install
+
+2. Linux Header:
+make ARCH=arm INSTALL_HDR_PATH=/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/arm-linux-gnueabi headers_install -j9
+
+3. GCC pass 1:
+/working_dir/Desktop/work/private/gcc_toolchain_builds/sources/gcc-gcc-8.2.0/configure --target=arm-linux-gnueabi --prefix=/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain --disable-nls --enable-languages=c
+make all-gcc
+make install-gcc
+
+4. glibc header:
+/working_dir/Desktop/work/private/gcc_toolchain_builds/sources/glibc-glibc-2.29/configure --host=arm-linux-gnueabi --prefix=/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/arm-linux-gnueabi --with-headers=/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/arm-linux-gnueabi/include
+make install-bootstrap-headers=yes install-headers
+make -j9 csu/subdir_lib
+install csu/crt1.o csu/crti.o csu/crtn.o /working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/arm-linux-gnueabi/lib
+/working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/bin/arm-linux-gnueabi-gcc -nostdlib -nostartfiles -shared -x c /dev/null -o /working_dir/Desktop/work/private/gcc_toolchain_builds/toolchain/arm-linux-gnueabi/lib/libc.so
+
+5. GCC pass 2
+make -j9 all-target-libgcc
+make install-target-libgcc
+
+6. glibc:
+make -j9
+
+- Here is where the error occurs. With glibc-2.28 it succeeds. Also this step succeeds with glibc-2.29, if configured with "--enable-languages=c,c++"
+
+Update: If I set CXX=arm-linux-gnueabi-g++ during configure it works! Even if (or because) arm-linux-gnueabi-g++ does not exist! Is this the expected behaviour? At least it is a workaround...
+
