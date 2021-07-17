@@ -1,0 +1,5 @@
+export TARGET=arm-linux-gnueabi
+export PREFIX={installation folder}
+export SYSROOT={sysroot folder}
+
+
